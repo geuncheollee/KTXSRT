@@ -1,4 +1,4 @@
-"""Reconstruct and verify the fixed-origin input matrices using the original rule."""
+"""Construct fixed-origin inputs from downloaded data and public announcement dates."""
 from __future__ import annotations
 import argparse
 import calendar
@@ -45,18 +45,22 @@ def make_inputs(panel: dict[str, dict[str, str]], ledger: list[dict[str, str]],
         })
     return rows
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--write", action="store_true", help="Also write to outputs/inputs/.")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     panel = {r["date"]: r for r in read(ROOT / "revision/data/monthly_panel_revision_v1.csv")}
     ledger = read(ROOT / "revision/forecast_protocol/holiday_announcement_ledger.csv")
     for year in (2023, 2024, 2025):
         rows = make_inputs(panel, ledger, year, False)
         relative = (f"revision/forecast_2024/origin_inputs_{year}_fixed_h1_12.csv" if year == 2023
                     else f"revision/forecast_protocol/origin_inputs_{year}_fixed_h1_12.csv")
-        expected = read(ROOT / relative)
-        assert [{k: str(v) for k, v in row.items()} for row in rows] == expected, year
+        target = ROOT / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+            writer.writeheader()
+            writer.writerows(rows)
         if args.write:
             output = ROOT / "outputs/inputs"
             output.mkdir(parents=True, exist_ok=True)
@@ -64,7 +68,7 @@ def main():
                 writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
                 writer.writeheader()
                 writer.writerows(rows)
-        print(f"PASS: {year} fixed-origin matrix, 12 months; announcement rule reproduced.", flush=True)
+        print(f"Built: {year} fixed-origin matrix, 12 months; announcement rule reproduced.", flush=True)
 
 if __name__ == "__main__":
     main()

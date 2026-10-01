@@ -61,7 +61,7 @@ def calculate(predictions: Path) -> pd.DataFrame:
     assert count == 72
     return pd.DataFrame(rows)
 
-def export_tables(scores: pd.DataFrame, output: Path, verify: bool = True) -> int:
+def export_tables(scores: pd.DataFrame, output: Path, verify: bool = False) -> int:
     output.mkdir(parents=True, exist_ok=True)
     verified = 0
     for number, metric in ((2, "MAPE"), (3, "MAE"), (4, "RMSE")):
@@ -84,19 +84,25 @@ def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--predictions", type=Path, default=ROOT / "reference/predictions")
+    parser.add_argument("--predictions", type=Path, default=ROOT / "refit_outputs/predictions")
     parser.add_argument("--output", type=Path, default=ROOT / "outputs")
-    parser.add_argument("--no-reference-check", action="store_true", help="For deliberate new experiments only; default checks the current manuscript.")
+    parser.add_argument("--reference-dir", type=Path, help="Optional private QA tables; not required for reproduction.")
     args = parser.parse_args()
     scores = calculate(args.predictions)
-    if not args.no_reference_check:
-        expected = pd.read_csv(ROOT / "reference/model_scores.csv")
+    if args.reference_dir:
+        expected = pd.read_csv(args.reference_dir / "model_scores.csv")
         keys = [f"{p}_{m}" for p in ("2024", "2025", "overall") for m in ("MAPE", "MAE", "RMSE")]
         np.testing.assert_allclose(scores.set_index("model")[keys], expected.set_index("model").loc[scores.model, keys], rtol=0, atol=1e-7)
-    count = export_tables(scores, args.output, verify=not args.no_reference_check)
+    count = export_tables(scores, args.output, verify=False)
+    if args.reference_dir:
+        for number, metric in ((2, "MAPE"), (3, "MAE"), (4, "RMSE")):
+            actual = pd.read_csv(args.output / f"table{number}_{metric}.csv", dtype=str, keep_default_na=False)
+            expected = pd.read_csv(args.reference_dir / f"table{number}_{metric}.csv", dtype=str, keep_default_na=False)
+            pd.testing.assert_frame_equal(actual, expected)
+            count += 27
     summary = {"models": 9, "forecast_files": 72, "target_months": 24, "displayed_values_verified": count, "neural_aggregation": "Mean of ten seed-specific period scores, not metrics of the mean forecast path", "panel_sha256": hashlib.sha256((ROOT / "revision/data/monthly_panel_revision_v1.csv").read_bytes()).hexdigest()}
     (args.output / "verification.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    print(f"PASS: 72 forecast files; {count}/81 displayed values match Tables 2-4.", flush=True)
+    print(f"Computed Tables 2-4 from 72 forecast files. Optional reference checks: {count}/81.", flush=True)
 
 if __name__ == "__main__":
     main()

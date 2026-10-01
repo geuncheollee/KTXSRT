@@ -1,87 +1,68 @@
-# KTX/SRT forecasting code — PPTE manuscript 45089
+﻿# KTX/SRT forecasting code - PPTE manuscript 45089
 
-This public repository provides the code used to obtain **Table 2 (MAPE), Table 3 (MAE) and Table 4 (RMSE)** in the manuscript revised on 1 October 2026. It contains Python code, requirements and execution instructions. **Input data, selected settings and prediction results are supplied with the journal submission as supplementary files and are not published in this repository.**
+This repository publishes the Python code used for Table 2 (MAPE), Table 3 (MAE) and Table 4 (RMSE), with code for Table 5 coefficients and Table 6 exploratory comparisons. **No input data, selected model settings, saved predictions or manuscript files are distributed here. No journal supplementary files or ZIP archives are required or supplied.** Obtain the data directly from the public sources cited in the manuscript; the preparation script downloads the forecasting inputs and saves them locally.
 
-## Files
+Current release: **ppte45089-public-data-20261001**. This release replaces the earlier ZIP-dependent preparation workflow.
 
-| Code | Purpose |
-| --- | --- |
-| `prepare_inputs.py` | Read the required local inputs/settings/results from the two submission supplements |
-| `replay_observed_panel.py` | Reconstruct the observed monthly panel from archived source tables |
-| `build_forecast_inputs.py` | Reconstruct the fixed-origin predictors and dated holiday exclusions |
-| `refit_models.py` | Refit the nine models, with optional prior-year tuning and AIC order search |
-| `reproduce_tables.py` | Recalculate and export Tables 2–4, preserving metric aggregation, ranking and rounding |
-| `revision/modeling/model_core.py` | Original six benchmark model functions, retained byte for byte |
-| `revision/modeling/aic_support.py` | Original 144-order grid and exact-diffuse SARIMA/SARIMAX fitting function |
-| `revision/modeling/residual_hybrid.py` | Original residual-LSTM training and recursive correction function |
+## Public data sources
 
-The function bodies of the grid, statistical fit, forecast-input construction and residual LSTM are unchanged from the research scripts. The portable runners adapt input discovery and output directories and route the statistical models through the current AIC rule. The two supplementary ZIPs retain the original scripts, source metadata and recorded selection logs for inspection.
+1. **KRIC train-type monthly passenger statistics:** https://www.kric.go.kr/jsp/industry/rss/railcarkindpassList.jsp . Select each year 2021-2025. The script sends `q_fdate` and `fdate` with the year and reads the monthly passenger table. Sum KTX, KTX-Sancheon, KTX-Honam, KTX-Eum and KTX-Cheongryong passenger counts. This excludes SRT, which is collected separately.
+2. **SR dataset 15071484:** https://www.data.go.kr/data/15071484/fileData.do . Download **(주)에스알_연도별월별수송실적_20251231**, the release registered on **23 February 2026**. The 12-row CP949 CSV contains each year's monthly totals. Use the `2021년 전체` through `2025년 전체` fields; check totals against all available route columns. No login or API key is needed for this file download. The script discovers the download link on the source page rather than using GitHub-hosted data.
+3. **Calendar:** `holidays==0.95` generates Korean public and substitute holidays. Public dates and announcement links in `public_inputs.py` document 2 October 2023, 1 October 2024, 27 January 2025 and 3 June 2025. Count distinct holiday dates on Monday-Friday, without duplicate temporary holidays. At each December forecast origin, exclude later-announced holidays. Actual training calendars retain the realized holidays. Government announcement links are written to a local ledger.
+4. **Bank of Korea ECOS, for the descriptive fare indices discussed in the manuscript:** https://ecos.bok.or.kr . In consumer-price table `901Y009`, monthly frequency, select item `G03202` (bus fares) and `G03301` (air fares), January 2021-December 2025. These are descriptive candidate variables and **are not forecasting inputs for Tables 2-6**; the forecasting commands do not require an ECOS key or download fare indices. ECOS web downloads are available; API use requires the reader's own ECOS key. Never commit an API key.
 
-## Prepare local inputs
+The study panel has 60 observed months, January 2021-December 2025. Combined demand equals the five KTX-class sum plus the published SRT total. No missing target month is imputed. The 2021 observations supply lag/sequence context; training targets begin in January 2022. Monthly totals are in passengers.
 
-Obtain both files supplied with the manuscript:
+**Version matters:** the study used the SR release above and the KRIC values available in the study period. Providers may update data or remove old releases. The code records source URLs, download time and source SHA256 hashes locally. A different source vintage may produce different results; this repository does not mirror historical source data. Retrospective use of final vintages does not establish real-time data availability.
 
-- `PPTE45089_reproducibility_20260929.zip`
-- `PPTE45089_all_AIC_update_20261001.zip`
+## Run from public sources
 
-They are submission supplements, not files downloadable from this GitHub repository. They provide the public-source input tables, 60-month observed panel, fixed-origin input matrices, current settings, candidate logs and 72 forecast paths. The current AIC update supersedes the earlier SARIMA/SARIMAX and hybrid results. No API key is required to replay these archived inputs. Place the two ZIPs in a local directory; do not add them to Git.
-
-Run from the repository root, replacing the paths below with their local locations:
-
-```bash
-python prepare_inputs.py --original-archive /path/to/PPTE45089_reproducibility_20260929.zip --aic-archive /path/to/PPTE45089_all_AIC_update_20261001.zip
-```
-
-On Windows, quote paths containing spaces. The preparation script writes only the required local inputs; `.gitignore` excludes all CSV, JSON, ZIP and document files and all data/output folders from version control.
-
-## Reproduce Tables 2–4
-
-The recorded reference environment is **Python 3.14.3 on Windows, CPU**. Create and activate an isolated environment:
+The verified experiment environment is Python 3.14.3 on Windows, CPU. Create an isolated environment and install the requirements:
 
 ```bash
 python -m venv .venv
-```
-
-Activate it with `.venv\Scripts\Activate.ps1` in Windows PowerShell, or `source .venv/bin/activate` on Linux/macOS. Then:
-
-```bash
-python -m pip install -r requirements-verify.txt
-python replay_observed_panel.py
-python build_forecast_inputs.py
-python reproduce_tables.py
-```
-
-Panel and forecast-input replay use only the Python standard library. Table calculation uses NumPy and pandas, reads the saved monthly predictions and checks **81 displayed values** against the current supplementary score file. It writes `outputs/table2_MAPE.csv`, `outputs/table3_MAE.csv`, `outputs/table4_RMSE.csv`, unrounded scores and a verification record. Each table is sorted by its own overall metric.
-
-The LSTM, Transformer and residual-hybrid metrics are means of ten seed-specific period scores, using seeds 42–51. They are not metrics of the mean forecast path. Overall RMSE uses all 24 monthly errors within each seed and is not the average of two annual RMSEs. MAPE is in percent; MAE and RMSE are in passengers.
-
-## Refit and repeat selection
-
-```bash
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+# Linux/macOS: source .venv/bin/activate
 python -m pip install -r requirements.txt
+python prepare_inputs.py
 python refit_models.py
-python reproduce_tables.py --predictions refit_outputs/predictions --output refit_outputs/tables
-
-# Repeat prior-year hyperparameter tuning using the recorded AIC orders.
-python refit_models.py --retune
-
-# Repeat statistical order search and prior-year tuning; this takes longer.
-python refit_models.py --search-orders --retune
-
-# Refit only the two proposed models.
-python refit_models.py --models M4_sarimax_3 M9_sarimax_lstm_residual
+python reproduce_tables.py
+python diagnostics.py
 ```
 
-Default refitting uses the recorded selections from the supplements and writes forecasts and logs to `refit_outputs/`; it never changes the reference inputs. For SARIMA and SARIMAX, `--search-orders` chooses the eligible training fit with the smallest AIC from 144 combinations: p,q ∈ {0,1,2}; d,P,D,Q ∈ {0,1}; seasonal period 12; no trend. Eligibility requires convergence, finite likelihood/AIC/BIC, the common full likelihood window, more post-diffuse observations than fitted parameters, and finite 12-month forecasts. Ties prefer fewer parameters then the candidate index. BIC does not select the current orders. Stationarity and invertibility are not enforced, so the manuscript's SARIMA root warnings remain relevant. The hybrid shares the AIC-selected SARIMAX order.
+`prepare_inputs.py` downloads the public source tables, checks monthly coverage and SR route totals, builds the observed panel and the three fixed-origin input matrices. It never downloads supplementary materials or stored predictions. Downloaded data stay under ignored local folders.
 
-Prophet, XGBoost, LSTM, Transformer and residual-LSTM settings use 2023 validation for the 2024 path and 2024 validation for the 2025 path. The selection seed is 42; candidates within 0.01 percentage points of the minimum validation MAPE prefer the simpler configuration then candidate index. Seasonal-naïve and Holt–Winters have fixed specifications. Final neural evaluation uses all ten seeds. The hybrid uses all fitted training residuals, including initialization values, as in the original experiment.
+If the public sites change their download interfaces, download the same source release manually and use:
 
-The frozen `protocol_v1.json` prepared locally from the original supplement contains earlier statistical candidate definitions. The public runner supersedes those branches using `aic_support.py` and the current AIC settings prepared from the update supplement. Internal model IDs in filenames map to the manuscript model names in the generated tables.
+```bash
+python prepare_inputs.py --kric-csv /path/to/kric_carkind_raw.csv --srt-csv /path/to/srt_20251231.csv
+```
 
-## Verification and interpretation
+Either option can be supplied independently. The KRIC CSV must have `yyyymm,total_pax,total_pkm`, then passenger columns `<train_type>_pax` and distance columns `<train_type>_pkm`, using these twelve train-type names in the original site order: KTX, 새마을, 무궁화, 통근열차, 누리로, KTX-산천, KTX-호남, KTX-이음, KTX-청룡, ITX-새마을, ITX-청춘열차, ITX-마음. Use the first monthly table values, not annual totals. `replay_observed_panel.py` can subsequently rebuild the panel from the downloaded source files without network access; `build_forecast_inputs.py` rebuilds the predictor matrices.
 
-The published code was checked with the supplied supplements in the recorded research environment. Source-panel replay and all three forecast-input matrices matched; recorded orders were checked against the four eligible minimum-AIC logs; all 72 selected-model refits matched the archived forecasts within numerical precision; prior-year hyperparameter reselection matched the recorded settings; and both saved and refitted predictions reproduced all 81 displayed values. No newly installed clean-environment run or fresh execution of every 144-candidate grid is claimed. Different package versions or platforms may produce different fitted paths; the archived predictions support exact table verification.
+## Selection, fitting and outputs
 
-The panel covers January 2021–December 2025. The 2021 observations provide lag/sequence context; training targets start in 2022. The 2024 and 2025 fixed-origin forecasts use 24 and 36 training targets and all 12 observed evaluation months each. Future holidays announced after each origin are excluded. These are retrospective evaluations using final data vintages; real-time source availability is not established. The 2024 evaluation outcomes also tune the 2025 non-statistical models, and the common AIC rule was adopted after forecast inspection. Public code does not remove those limitations or establish statistical superiority from model rankings.
+`refit_models.py` repeats all order searches and prior-year tuning rather than reading stored selected settings. For SARIMA and SARIMAX it evaluates 144 combinations: p,q in {0,1,2}; d,P,D,Q in {0,1}; seasonal period 12; no trend. The fitting function uses exact diffuse initialization and at most 500 optimizer iterations. Eligibility requires convergence, finite likelihood/AIC/BIC, the full common likelihood window, more post-diffuse observations than parameters and a finite 12-month forecast. The eligible minimum AIC selects the order; ties prefer fewer parameters then candidate index. Stationarity/invertibility are not enforced. The hybrid uses the same selected SARIMAX order.
 
-Source providers and dated announcements are documented in the manuscript and submission supplements: KRIC train-type statistics, SR public dataset 15071484 and the calendar/source records. The fare/oil columns retained in the original panel are not predictors in Tables 2–4. Additional coefficient, residual-diagnostic and exploratory paired-comparison outputs remain in the submission supplements.
+Prophet, XGBoost, LSTM, Transformer and residual-LSTM settings use prior-year validation: 2023 for the 2024 forecast and 2024 for 2025. Candidate grids and optimizer specifications are defined in `experiment_config.py`; they contain method definitions, not preselected results or observed data. Candidates within 0.01 percentage points of the smallest validation MAPE prefer the simpler configuration then candidate index. Selection uses seed 42. Final neural evaluation uses seeds 42-51. Seasonal-naive and Holt-Winters specifications are fixed. The hybrid trains on all fitted residuals, including initialization values, as in the original experiment.
+
+The original model core, extracted full-order grid, exact-diffuse fitting function and residual-LSTM function are retained. Portable runners change input acquisition and output discovery. Older statistical branches in `model_core.py` are not called by the current runner: the current runner routes SARIMA/SARIMAX and the hybrid base through `aic_support.fit`.
+
+Generated local files include:
+
+- `refit_outputs/logs/`: complete AIC candidate/failure logs, validation logs and selections.
+- `refit_outputs/predictions/`: 72 forecast files, covering nine models, two evaluation years and ten seeds for each neural model.
+- `outputs/table2_MAPE.csv`, `table3_MAE.csv`, `table4_RMSE.csv`: tables sorted by their own overall metric, plus unrounded scores.
+- `outputs/diagnostics/`: coefficient estimates/SE/95% intervals/p-values, standardized residuals, Ljung-Box diagnostics, locally generated residual plots, monthly absolute percentage errors and paired tests with Holm correction over eight comparisons.
+
+Neural scores are means of ten seed-specific period scores, not errors of the mean forecast. Overall RMSE uses all 24 errors within each seed and is not the mean of annual RMSEs. MAPE is percent; MAE/RMSE are passengers. The paired tests use seed-mean monthly APE differences over 24 months and are exploratory.
+
+Internal filename IDs map to model names in the exported tables. To fit only the proposed models, run `python refit_models.py --models M4_sarimax_3 M9_sarimax_lstm_residual`; generating all Tables 2-6 requires the full run.
+
+## Verification and limits
+
+The standalone public-source pipeline was checked in the recorded research environment: freshly downloaded KRIC/SR values matched every forecasting input; all three origin matrices matched; full AIC searches and prior-year tuning reproduced the selected settings; all 72 forecast paths and all 81 displayed values in Tables 2-4 matched the manuscript, including table order and rounding. Coefficient/residual and paired-test calculations were also checked. This is not a newly installed clean-environment test. Package versions, operating system and subsequently revised source data may affect numerical results.
+
+The 2024 outcomes tune the 2025 non-statistical models. The common AIC rule was adopted after forecast inspection. SARIMA root warnings and adverse outcomes are retained; the public code does not establish confirmatory superiority. Residual inference uses only 21/12 usable observations for 2024/2025, and the 2025 Ljung-Box result at lag 11 indicates remaining autocorrelation. Coefficient uncertainty is conditional on the selected order and excludes order-selection uncertainty. Longer evaluations are needed.
+
+`.gitignore` excludes source data, JSON settings, CSV outputs, ZIP archives, manuscripts, credentials and generated figures. Downloaded data and generated results are not published by running these commands.

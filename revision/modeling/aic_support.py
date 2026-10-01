@@ -1,6 +1,6 @@
 """Original full-grid construction and exact-diffuse SARIMA/SARIMAX fitting functions.
 
-Extracted without algorithm changes; source hashes are in provenance/source_functions.json.
+Extracted without algorithm changes from the experiment's original fitting scripts.
 """
 from __future__ import annotations
 import itertools

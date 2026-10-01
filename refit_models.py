@@ -1,8 +1,7 @@
-"""Portable runner around the original experiment's model functions.
+"""Select and fit all nine models from public-source observations.
 
-Reuses recorded selections by default. --retune repeats prior-year tuning;
---search-orders repeats the 144-candidate minimum-AIC searches.
-Outputs are separate from the immutable reference predictions.
+Every run repeats training-only AIC selection and prior-year tuning.
+No saved settings or forecasts are required.
 """
 from __future__ import annotations
 import argparse
@@ -19,7 +18,6 @@ from aic_support import fit, grid
 from residual_hybrid import residual_lstm
 from reproduce_tables import MODELS, NEURAL
 
-SETTINGS = json.loads((ROOT / "settings.json").read_text(encoding="utf-8"))
 STATISTICAL = {"M3_sarima", "M4_sarimax_3"}
 HYBRID = "M9_sarimax_lstm_residual"
 
@@ -61,11 +59,8 @@ def search_aic(panel, year, model, output):
     return candidate
 
 def selected_stat_candidate(year, model, choices):
-    if (year, model) in choices:
-        return choices[(year, model)]
-    if year == 2023:
-        return SETTINGS["hybrid_validation_base_2023"]["candidate"]
-    return SETTINGS["years"][str(year)][model]["candidate"]
+    return choices[(year, model)]
+
 
 def tune(panel, year, model, choices, output):
     # No 2024/2025 target-year truth enters order selection or prior-year tuning.
@@ -113,8 +108,8 @@ def main():
     parser.add_argument("--models", nargs="+", choices=["all"]+list(MODELS), default=["all"])
     parser.add_argument("--years", nargs="+", type=int, choices=(2024, 2025), default=[2024, 2025])
     parser.add_argument("--output", type=Path, default=ROOT / "refit_outputs")
-    parser.add_argument("--retune", action="store_true")
-    parser.add_argument("--search-orders", action="store_true")
+    parser.add_argument("--retune", action="store_true", help="Compatibility option: tuning is always performed.")
+    parser.add_argument("--search-orders", action="store_true", help="Compatibility option: AIC search is always performed.")
     args = parser.parse_args()
     models = list(MODELS) if "all" in args.models else args.models
     if args.output.resolve().is_relative_to((ROOT / "reference").resolve()):
@@ -123,20 +118,19 @@ def main():
     logs.mkdir(parents=True, exist_ok=True)
     panel = core.read_panel()
     choices = {}
-    if args.search_orders:
+    # Always repeat selection; no preselected settings are distributed.
+    if models:
         required = {(year, model) for year in args.years for model in STATISTICAL if model in models or (model == "M4_sarimax_3" and HYBRID in models)}
-        if args.retune and HYBRID in models:
+        if HYBRID in models:
             required.update((year-1, "M4_sarimax_3") for year in args.years)
         for year, model in sorted(required):
             choices[(year, model)] = search_aic(panel, year, model, logs)
     selections = {}
-    checks = []
     for year in args.years:
         train, inputs = core.train_frame(panel, year-1), future(year)
         for model in models:
             candidate = (selected_stat_candidate(year, model, choices) if model in STATISTICAL
-                         else tune(panel, year, model, choices, logs) if args.retune
-                         else SETTINGS["years"][str(year)][model]["candidate"])
+                         else tune(panel, year, model, choices, logs))
             selections[f"{year}:{model}"] = candidate
             if model in STATISTICAL or model == HYBRID:
                 base_candidate = candidate if model in STATISTICAL else selected_stat_candidate(year, "M4_sarimax_3", choices)
@@ -158,12 +152,8 @@ def main():
                 directory.mkdir(parents=True, exist_ok=True)
                 name = f"{model}_seed{seed}.csv"
                 pd.DataFrame({"target_month": inputs.target_month, "y_true": truth, "y_pred": prediction}).to_csv(directory / name, index=False)
-                archived = pd.read_csv(ROOT / "reference/predictions" / str(year) / name)
-                maximum = float(np.max(np.abs(prediction-archived.y_pred.to_numpy(float))))
-                checks.append({"year": year, "model": model, "seed": seed, "max_absolute_prediction_difference_passengers": maximum})
-                print(f"Refit {year} {MODELS[model]} seed {seed}: maximum archived difference {maximum:.8g} passengers", flush=True)
+                print(f"Computed {year} {MODELS[model]} seed {seed}", flush=True)
     (logs / "selections.json").write_text(json.dumps(selections, indent=2)+"\n", encoding="utf-8")
-    pd.DataFrame(checks).to_csv(logs / "prediction_comparison.csv", index=False)
     print("Completed selected refits. Recalculate tables with reproduce_tables.py --predictions <output>/predictions.", flush=True)
 
 if __name__ == "__main__":

@@ -9,6 +9,9 @@ venv/
 *.zip
 *.docx
 *.pdf
+*.jpg
+*.png
+*.html
 data/
 reference/
 provenance/
